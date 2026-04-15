@@ -165,28 +165,21 @@ For persistent storage, enable Vercel Blob in your project settings.
 
 ### **Task Slayer**
 ```typescript
-const DB_URL = 'https://databasetoki.vercel.app';
-const PROJECT_ID = 'task-slayer-xxx';
-const API_KEY = 'dbtoki_live_xxx';
+import { saveToTable, getFromTable } from '@/utils/databaseToki';
 
-// Save quest
-await fetch(`${DB_URL}/api/${PROJECT_ID}/quests`, {
-  method: 'POST',
-  headers: {
-    'Authorization': `Bearer ${API_KEY}`,
-    'Content-Type': 'application/json'
-  },
-  body: JSON.stringify(quest)
-});
+// Save data
+await saveToTable('quests', { title: 'New Quest', xpReward: 50 });
+
+// Get data
+const quests = await getFromTable('quests');
 ```
 
 ### **LinkKamu**
 ```typescript
 // Store link page
-await fetch(`${DB_URL}/api/${PROJECT_ID}/pages`, {
-  method: 'POST',
-  headers: { 'Authorization': `Bearer ${API_KEY}` },
-  body: JSON.stringify(page)
+await saveToTable('pages', {
+  title: 'My Links',
+  links: [...]
 });
 ```
 
@@ -210,6 +203,8 @@ await fetch(`${DB_URL}/api/${PROJECT_ID}/pages`, {
 - [x] Table operations
 - [x] API key auth
 - [x] Landing page
+- [ ] Task Slayer integration
+- [ ] LinkKamu integration
 
 ### **v0.2.0 - Dashboard**
 - [ ] Visual project manager
