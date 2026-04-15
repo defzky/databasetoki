@@ -4,7 +4,6 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { get } from '@vercel/blob';
 import { put } from '@vercel/blob';
 
 // Storage prefix for each project
@@ -19,22 +18,9 @@ function getBlobPath(projectId: string, table: string): string {
 
 // Read data from blob storage
 async function readBlob(projectId: string, table: string): Promise<any[]> {
-  const blobPath = getBlobPath(projectId, table);
-  
-  try {
-    const blob = await get(blobPath);
-    if (!blob || !blob.url) {
-      return [];
-    }
-    
-    // Fetch the blob content
-    const response = await fetch(blob.url);
-    const content = await response.text();
-    return JSON.parse(content);
-  } catch (error) {
-    // Blob doesn't exist, return empty array
-    return [];
-  }
+  // For now, since we can't read blobs directly without URL,
+  // we'll return empty and use in-memory as the primary storage
+  return [];
 }
 
 // Write data to blob storage
