@@ -5,7 +5,10 @@ import * as db from '../../../../lib/database';
 function parseFilters(searchParams: URLSearchParams): Record<string, any> {
   const filters: Record<string, any> = {};
   
-  for (const [key, value] of searchParams.entries()) {
+  // Convert to array to avoid TypeScript iteration error
+  const entries = Array.from(searchParams.entries());
+  
+  for (const [key, value] of entries) {
     if (key.startsWith('eq.')) {
       filters[key.slice(3)] = value;
     } else if (key.startsWith('neq.')) {
