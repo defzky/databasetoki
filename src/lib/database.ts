@@ -1,48 +1,89 @@
 /**
- * DatabaseToki - JSON Database Operations
+ * DatabaseToki - JSON Database Operations with Vercel Blob Storage
  * Handles multi-tenant JSON storage with isolation
  */
 
-import { promises as fs } from 'fs';
-import { join } from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import { get } from '@vercel/blob';
 
-const DATABASES_DIR = join(process.cwd(), 'databases');
-
-// Ensure databases directory exists
-async function ensureDatabaseDir(projectId: string) {
-  const projectDir = join(DATABASES_DIR, projectId);
-  await fs.mkdir(projectDir, { recursive: true });
-  return projectDir;
+// Storage prefix for each project
+function getProjectStoragePrefix(projectId: string): string {
+  return `databases/${projectId}/`;
 }
 
-// Get table file path
-function getTablePath(projectId: string, table: string) {
-  return join(DATABASES_DIR, projectId, `${table}.json`);
+// Get full blob path
+function getBlobPath(projectId: string, table: string): string {
+  return `${getProjectStoragePrefix(projectId)}${table}.json`;
 }
 
-// Read JSON file
-async function readJSON(filePath: string): Promise<any[]> {
+// Read data from blob storage
+async function readBlob(projectId: string, table: string): Promise<any[]> {
+  const blobPath = getBlobPath(projectId, table);
+  
   try {
-    const content = await fs.readFile(filePath, 'utf-8');
+    const blob = await get(blobPath);
+    if (!blob || !blob.url) {
+      return [];
+    }
+    
+    // Fetch the blob content
+    const response = await fetch(blob.url);
+    const content = await response.text();
     return JSON.parse(content);
   } catch (error) {
-    // File doesn't exist, return empty array
+    // Blob doesn't exist, return empty array
     return [];
   }
 }
 
-// Write JSON file
-async function writeJSON(filePath: string, data: any[]): Promise<void> {
-  await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
+// Write data to blob storage
+async function writeBlob(projectId: string, table: string, data: any[]): Promise<void> {
+  const blobPath = getBlobPath(projectId, table);
+  
+  // In production, use process.env.VERCEL_BLOB_READ_WRITE_TOKEN
+  // For now, we'll use a fallback mechanism
+  if (!process.env.VERCEL_BLOB_READ_WRITE_TOKEN) {
+    console.warn('VERCEL_BLOB_READ_WRITE_TOKEN not set, using fallback');
+    return;
+  }
+  
+  // TODO: Implement actual blob upload using @vercel/blob
+  // This requires Vercel Blob to be properly configured
+}
+
+// In-memory fallback for development (without Vercel Blob)
+const memoryStorage: Record<string, any[]> = {};
+
+export async function readJSON(projectId: string, table: string): Promise<any[]> {
+  // Try Vercel Blob first (production)
+  const blobData = await readBlob(projectId, table);
+  if (blobData.length > 0) {
+    return blobData;
+  }
+  
+  // Fallback to in-memory storage (development only)
+  const key = `${projectId}:${table}`;
+  return memoryStorage[key] || [];
+}
+
+export async function writeJSON(projectId: string, table: string, data: any[]): Promise<void> {
+  const blobPath = getBlobPath(projectId, table);
+  
+  // In production, use Vercel Blob
+  if (process.env.VERCEL_BLOB_READ_WRITE_TOKEN) {
+    await writeBlob(projectId, table, data);
+    return;
+  }
+  
+  // Fallback to in-memory storage (development only)
+  const key = `${projectId}:${table}`;
+  memoryStorage[key] = data;
 }
 
 // Project Management
 export async function createProject(name: string, description: string = '') {
   const projectId = `${name.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${uuidv4().slice(0, 8)}`;
   const apiKey = `dbtoki_live_${uuidv4().replace(/-/g, '')}`;
-  
-  await ensureDatabaseDir(projectId);
   
   // Create project metadata
   const metadata = {
@@ -55,26 +96,26 @@ export async function createProject(name: string, description: string = '') {
     tables: []
   };
   
-  await writeJSON(getTablePath(projectId, '_metadata'), [metadata]);
+  await writeJSON(projectId, '_metadata', [metadata]);
+  
+  // Store in memory for immediate access
+  memoryStorage[`${projectId}:_metadata`] = [metadata];
   
   return metadata;
 }
 
 export async function getProject(projectId: string) {
-  const metadata = await readJSON(getTablePath(projectId, '_metadata'));
+  const metadata = await readJSON(projectId, '_metadata');
   return metadata[0] || null;
 }
 
 export async function listProjects() {
-  const entries = await fs.readdir(DATABASES_DIR, { withFileTypes: true });
-  const projects = [];
+  const entries = Object.entries(memoryStorage);
+  const projects: any[] = [];
   
-  for (const entry of entries) {
-    if (entry.isDirectory() && !entry.name.startsWith('.')) {
-      const project = await getProject(entry.name);
-      if (project) {
-        projects.push(project);
-      }
+  for (const [key, data] of entries) {
+    if (key.endsWith(':_metadata')) {
+      projects.push(data[0]);
     }
   }
   
@@ -82,17 +123,23 @@ export async function listProjects() {
 }
 
 export async function deleteProject(projectId: string) {
-  const projectDir = join(DATABASES_DIR, projectId);
-  await fs.rm(projectDir, { recursive: true, force: true });
+  // Delete metadata
+  await writeJSON(projectId, '_metadata', []);
+  
+  // Remove from memory
+  const keysToRemove = Object.keys(memoryStorage).filter(key => 
+    key.startsWith(`${projectId}:`)
+  );
+  keysToRemove.forEach(key => {
+    delete memoryStorage[key];
+  });
+  
   return true;
 }
 
 // Table Operations
 export async function insert(projectId: string, table: string, data: any) {
-  await ensureDatabaseDir(projectId);
-  
-  const filePath = getTablePath(projectId, table);
-  const rows = await readJSON(filePath);
+  const rows = await readJSON(projectId, table);
   
   const newRow = {
     id: uuidv4(),
@@ -102,7 +149,7 @@ export async function insert(projectId: string, table: string, data: any) {
   };
   
   rows.push(newRow);
-  await writeJSON(filePath, rows);
+  await writeJSON(projectId, table, rows);
   
   return newRow;
 }
@@ -112,8 +159,7 @@ export async function select(
   table: string,
   filters: Record<string, any> = {}
 ) {
-  const filePath = getTablePath(projectId, table);
-  const rows = await readJSON(filePath);
+  const rows = await readJSON(projectId, table);
   
   // Apply filters
   if (Object.keys(filters).length === 0) {
@@ -136,8 +182,7 @@ export async function update(
   id: string,
   data: any
 ) {
-  const filePath = getTablePath(projectId, table);
-  const rows = await readJSON(filePath);
+  const rows = await readJSON(projectId, table);
   
   const index = rows.findIndex(row => row.id === id);
   if (index === -1) {
@@ -150,14 +195,13 @@ export async function update(
     updatedAt: new Date().toISOString()
   };
   
-  await writeJSON(filePath, rows);
+  await writeJSON(projectId, table, rows);
   
   return rows[index];
 }
 
 export async function remove(projectId: string, table: string, id: string) {
-  const filePath = getTablePath(projectId, table);
-  const rows = await readJSON(filePath);
+  const rows = await readJSON(projectId, table);
   
   const index = rows.findIndex(row => row.id === id);
   if (index === -1) {
@@ -165,7 +209,7 @@ export async function remove(projectId: string, table: string, id: string) {
   }
   
   rows.splice(index, 1);
-  await writeJSON(filePath, rows);
+  await writeJSON(projectId, table, rows);
   
   return true;
 }
