@@ -5,6 +5,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { get } from '@vercel/blob';
+import { put } from '@vercel/blob';
 
 // Storage prefix for each project
 function getProjectStoragePrefix(projectId: string): string {
@@ -47,8 +48,11 @@ async function writeBlob(projectId: string, table: string, data: any[]): Promise
     return;
   }
   
-  // TODO: Implement actual blob upload using @vercel/blob
-  // This requires Vercel Blob to be properly configured
+  // Upload to blob storage
+  await put(blobPath, JSON.stringify(data, null, 2), {
+    access: 'public',
+    contentType: 'application/json'
+  });
 }
 
 // In-memory fallback for development (without Vercel Blob)
