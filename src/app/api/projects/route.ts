@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import * as db from '@/lib/database';
+import * as db from '../../../lib/database';
 
 // POST /api/projects - Create new project
 export async function POST(request: NextRequest) {

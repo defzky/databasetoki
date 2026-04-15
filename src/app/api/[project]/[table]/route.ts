@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import * as db from '@/lib/database';
+import * as db from '../../../../lib/database';
 
 // Helper to parse query params into filters
 function parseFilters(searchParams: URLSearchParams): Record<string, any> {
